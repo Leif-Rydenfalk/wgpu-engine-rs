@@ -6,6 +6,12 @@ use winit::window::Window;
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 2],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct InstanceData {
     position: [f32; 2],
 }
@@ -17,6 +23,7 @@ pub struct WgpuCtx<'window> {
     device: wgpu::Device,
     queue: wgpu::Queue,
     render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
     num_instances: u32,
 }
@@ -58,6 +65,29 @@ impl<'window> WgpuCtx<'window> {
         let surface_config = surface.get_default_config(&adapter, width, height).unwrap();
         surface.configure(&device, &surface_config);
 
+
+            // Create vertex data for triangle
+            let vertices = [
+                Vertex { position: [-0.05, -0.05] },
+                Vertex { position: [0.05, -0.05] },
+                Vertex { position: [0.0, 0.05] },
+            ];
+    
+            let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Vertex Buffer"),
+                size: std::mem::size_of_val(&vertices) as u64,
+                usage: BufferUsages::VERTEX,
+                mapped_at_creation: true,
+            });
+    
+            {
+                let mut buffer_view = vertex_buffer.slice(..).get_mapped_range_mut();
+                bytemuck::cast_slice_mut::<_, Vertex>(&mut buffer_view)
+                    .copy_from_slice(&vertices);
+            }
+            vertex_buffer.unmap();
+    
+
         // Create instance data for a 10x10 grid
         let mut instances = Vec::new();
         for x in 0..10 {
@@ -70,6 +100,7 @@ impl<'window> WgpuCtx<'window> {
                 });
             }
         }
+        
         let num_instances = instances.len() as u32;
 
         let instance_data_size = std::mem::size_of::<InstanceData>() as u64;
@@ -98,6 +129,7 @@ impl<'window> WgpuCtx<'window> {
             device,
             queue,
             render_pipeline,
+            vertex_buffer,
             instance_buffer,
             num_instances,
         }
@@ -131,7 +163,8 @@ impl<'window> WgpuCtx<'window> {
                 occlusion_query_set: None,
             });
             rpass.set_pipeline(&self.render_pipeline);
-            rpass.set_vertex_buffer(0, self.instance_buffer.slice(..));
+            rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             rpass.draw(0..3, 0..self.num_instances);
         }
 
@@ -153,7 +186,7 @@ fn create_pipeline(
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: None,
-        source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
+        source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.txt"))),
     });
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -168,15 +201,26 @@ fn create_pipeline(
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_main"),
-            buffers: &[wgpu::VertexBufferLayout {
-                array_stride: std::mem::size_of::<InstanceData>() as wgpu::BufferAddress,
-                step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &[wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x2,
-                    offset: 0,
-                    shader_location: 0,
-                }],
-            }],
+            buffers: &[
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    }],
+                },
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<InstanceData>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 1,
+                    }],
+                },
+            ],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
