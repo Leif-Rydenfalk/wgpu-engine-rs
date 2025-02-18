@@ -1,11 +1,18 @@
+opt-level = 3
+
+[env]
+RUSTFLAGS = "-C target-cpu=native"
+
 [package]
 name = "engine"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-winit = { version = "0.30.8" }
-pollster = { version = "0.4" }
-wgpu = { version = "24.0.1" }
-hecs = "0.10.5"
-bytemuck = { version = "1.13", features = ["derive"] }
+# rayon = "1.10.0"
+wide = { version = "0.7.32", features = ["std"] }
+# winit = { version = "0.30.8" }
+# pollster = { version = "0.4" }
+# wgpu = { version = "24.0.1" }
+# hecs = "0.10.5"
+bytemuck = { version = "1.21", features = ["derive"] }
