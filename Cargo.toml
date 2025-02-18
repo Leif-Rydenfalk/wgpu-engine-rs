@@ -7,3 +7,5 @@ edition = "2021"
 winit = { version = "0.30.8" }
 pollster = { version = "0.4" }
 wgpu = { version = "24.0.1" }
+hecs = "0.10.5"
+bytemuck = { version = "1.13", features = ["derive"] }

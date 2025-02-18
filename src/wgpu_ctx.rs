@@ -1,8 +1,14 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 use wgpu::MemoryHints::Performance;
-use wgpu::{ShaderSource};
+use wgpu::{BufferDescriptor, BufferUsages, ShaderSource};
 use winit::window::Window;
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct InstanceData {
+    position: [f32; 2],
+}
 
 pub struct WgpuCtx<'window> {
     surface: wgpu::Surface<'window>,
@@ -11,9 +17,15 @@ pub struct WgpuCtx<'window> {
     device: wgpu::Device,
     queue: wgpu::Queue,
     render_pipeline: wgpu::RenderPipeline,
+    instance_buffer: wgpu::Buffer,
+    num_instances: u32,
 }
 
 impl<'window> WgpuCtx<'window> {
+    pub fn new(window: Arc<Window>) -> WgpuCtx<'window> {
+        pollster::block_on(WgpuCtx::new_async(window))
+    }
+
     pub async fn new_async(window: Arc<Window>) -> WgpuCtx<'window> {
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(Arc::clone(&window)).unwrap();
@@ -21,18 +33,16 @@ impl<'window> WgpuCtx<'window> {
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
                 force_fallback_adapter: false,
-                // Request an adapter which can render to our surface
                 compatible_surface: Some(&surface),
             })
             .await
             .expect("Failed to find an appropriate adapter");
-        // Create the logical device and command queue
+
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
                     required_features: wgpu::Features::empty(),
-                    // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
                     required_limits: wgpu::Limits::downlevel_webgl2_defaults()
                         .using_resolution(adapter.limits()),
                     memory_hints: Performance,
@@ -42,15 +52,42 @@ impl<'window> WgpuCtx<'window> {
             .await
             .expect("Failed to create device");
 
-        // 获取窗口内部物理像素尺寸（没有标题栏）
-        let mut size = window.inner_size();
-        // 至少（w = 1, h = 1），否则Wgpu会panic
+        let size = window.inner_size();
         let width = size.width.max(1);
         let height = size.height.max(1);
-        // 获取一个默认配置
         let surface_config = surface.get_default_config(&adapter, width, height).unwrap();
-        // 完成首次配置
         surface.configure(&device, &surface_config);
+
+        // Create instance data for a 10x10 grid
+        let mut instances = Vec::new();
+        for x in 0..10 {
+            for y in 0..10 {
+                instances.push(InstanceData {
+                    position: [
+                        (x as f32 - 4.5) * 0.2, // Center the grid
+                        (y as f32 - 4.5) * 0.2,
+                    ],
+                });
+            }
+        }
+        let num_instances = instances.len() as u32;
+
+        let instance_data_size = std::mem::size_of::<InstanceData>() as u64;
+        let buffer_size = instance_data_size * instances.len() as u64;
+
+        let instance_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("Instance Buffer"),
+            size: buffer_size,
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            mapped_at_creation: true,
+        });
+
+        {
+            let mut buffer_view = instance_buffer.slice(..).get_mapped_range_mut();
+            bytemuck::cast_slice_mut::<_, InstanceData>(&mut buffer_view)
+                .copy_from_slice(bytemuck::cast_slice(&instances));
+        }
+        instance_buffer.unmap();
 
         let render_pipeline = create_pipeline(&device, surface_config.format);
 
@@ -61,18 +98,9 @@ impl<'window> WgpuCtx<'window> {
             device,
             queue,
             render_pipeline,
+            instance_buffer,
+            num_instances,
         }
-    }
-
-    pub fn new(window: Arc<Window>) -> WgpuCtx<'window> {
-        pollster::block_on(WgpuCtx::new_async(window))
-    }
-
-    pub fn resize(&mut self, new_size: (u32, u32)) {
-        let (width, height) = new_size;
-        self.surface_config.width = width.max(1);
-        self.surface_config.height = height.max(1);
-        self.surface.configure(&self.device, &self.surface_config);
     }
 
     pub fn draw(&mut self) {
@@ -86,6 +114,7 @@ impl<'window> WgpuCtx<'window> {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
@@ -93,7 +122,7 @@ impl<'window> WgpuCtx<'window> {
                     view: &texture_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -102,10 +131,19 @@ impl<'window> WgpuCtx<'window> {
                 occlusion_query_set: None,
             });
             rpass.set_pipeline(&self.render_pipeline);
-            rpass.draw(0..3, 0..1);
+            rpass.set_vertex_buffer(0, self.instance_buffer.slice(..));
+            rpass.draw(0..3, 0..self.num_instances);
         }
+
         self.queue.submit(Some(encoder.finish()));
         surface_texture.present();
+    }
+
+    pub fn resize(&mut self, new_size: (u32, u32)) {
+        let (width, height) = new_size;
+        self.surface_config.width = width.max(1);
+        self.surface_config.height = height.max(1);
+        self.surface.configure(&self.device, &self.surface_config);
     }
 }
 
@@ -113,40 +151,45 @@ fn create_pipeline(
     device: &wgpu::Device,
     swap_chain_format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
-    // Load the shaders from disk
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: None,
         source: ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
     });
+
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[],
+        push_constant_ranges: &[],
+    });
+
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: None,
-        layout: None,
+        layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_main"),
-            buffers: &[],
+            buffers: &[wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<InstanceData>() as wgpu::BufferAddress,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &[wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                }],
+            }],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader,
             entry_point: Some("fs_main"),
             compilation_options: Default::default(),
-            targets: &[Some(swap_chain_format.into())],
+            targets: &[Some(wgpu::ColorTargetState {
+                format: swap_chain_format,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
         }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            // strip_index_format: None,
-            // front_face: wgpu::FrontFace::Ccw,
-            // cull_mode: Some(wgpu::Face::Back),
-            // // Setting this to anything other than Fill requires Features::POLYGON_MODE_LINE
-            // // or Features::POLYGON_MODE_POINT
-            // polygon_mode: wgpu::PolygonMode::Fill,
-            // // Requires Features::DEPTH_CLIP_CONTROL
-            // unclipped_depth: false,
-            // // Requires Features::CONSERVATIVE_RASTERIZATION
-            // conservative: false,
-            ..Default::default()
-        },
+        primitive: wgpu::PrimitiveState::default(),
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
         multiview: None,
