@@ -10,6 +10,8 @@ use winit::event_loop::{ControlFlow, EventLoop};
 
 use std::sync::mpsc::{channel, Receiver, Sender};
 
+use rand::Rng;
+
 mod app;
 mod wgpu_ctx;
 mod camera;
@@ -17,14 +19,16 @@ pub use camera::*;
 
 fn sim(sender: Sender<Vec<InstanceData>>) {
     const FRAMES: u32 = 60;
-    const COUNT: usize = 100; // 10x10 grid
-    const GRID_SIZE: usize = 10; // sqrt(COUNT)
+    const COUNT: usize = 10000; // 10x10 grid
+    const GRID_SIZE: usize = 100; // sqrt(COUNT)
     const SPACING: f32 = 0.2; // Space between particles
     
     let mut x = [f32x4::new([0.0f32; 4]); COUNT / 4 + 1];
     let mut y = [f32x4::new([0.0f32; 4]); COUNT / 4 + 1];
     let mut x_vel = [f32x4::new([0.0f32; 4]); COUNT / 4 + 1];
     let mut y_vel = [f32x4::new([0.0f32; 4]); COUNT / 4 + 1];
+
+    let mut rng = rand::rng();
     
     // Initialize grid positions
     for i in 0..COUNT/4 {
@@ -46,17 +50,32 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
         x[i] = f32x4::new(x_values);
         y[i] = f32x4::new(y_values);
     }
+
+    // Initialize velocities
+    for i in 0..COUNT/4 {
+        let mut x_values = [0.0f32; 4];
+        let mut y_values = [0.0f32; 4];
+        
+        for j in 0..4 {
+            // Center the grid and offset each particle
+            x_values[j] = rng.random_range(-0.1..0.1);
+            y_values[j] = rng.random_range(-0.1..0.1);
+        }
+        
+        x_vel[i] = f32x4::new(x_values);
+        y_vel[i] = f32x4::new(y_values);
+    }
     
     let gravity: f32x4 = f32x4::new([-0.01f32; 4]);
     let dt = f32x4::new([0.1f32; 4]);
 
     loop {
-        // // Update physics
-        // for i in 0..COUNT/4 {
-        //     y_vel[i] += gravity * dt;
-        //     x[i] += x_vel[i] * dt;
-        //     y[i] += y_vel[i] * dt;
-        // }
+        // Update physics
+        for i in 0..COUNT/4 {
+            y_vel[i] += gravity * dt;
+            x[i] += x_vel[i] * dt;
+            y[i] += y_vel[i] * dt;
+        }
 
         // Convert SIMD data to instance data
         let mut instances = Vec::with_capacity(COUNT);

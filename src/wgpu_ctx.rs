@@ -179,8 +179,25 @@ impl<'window> WgpuCtx<'window> {
     }
 
     pub fn update_instances(&mut self, instances: &[InstanceData]) {
-        self.queue
-            .write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
+        let new_buffer_size = (std::mem::size_of::<InstanceData>() * instances.len()) as u64;
+        let current_buffer_size = self.instance_buffer.size();
+
+        // If new data is larger than current buffer, create a new larger buffer
+        if new_buffer_size > current_buffer_size {
+            // Create new buffer with the new size
+            let new_instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Instance Buffer"),
+                size: new_buffer_size,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
+            // Replace the old buffer with the new one
+            self.instance_buffer = new_instance_buffer;
+        }
+
+        // Write the new instance data to the buffer
+        self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
         self.num_instances = instances.len() as u32;
     }
 
