@@ -16,7 +16,7 @@ struct CameraUniform {
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     let pos = in.position + in.instance_position;
-    let transformed_pos = camera.view_matrix * vec4<f32>(pos, 0.0, 1.0);
+    let transformed_pos = camera.view_matrix * vec4<f32>(pos * 0.1, 0.0, 1.0);
     
     var output: VertexOutput;
     output.position = transformed_pos;

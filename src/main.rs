@@ -19,7 +19,7 @@ pub use camera::*;
 
 fn sim(sender: Sender<Vec<InstanceData>>) {
     const FRAMES: u32 = 60;
-    const COUNT: usize = 10000; // 10x10 grid
+    const COUNT: usize = 10000; 
     const GRID_SIZE: usize = 100; // sqrt(COUNT)
     const SPACING: f32 = 0.2; // Space between particles
     
@@ -68,8 +68,12 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
     
     let gravity: f32x4 = f32x4::new([-0.01f32; 4]);
     let dt = f32x4::new([0.1f32; 4]);
-
+    
+    let mut frame: u32 = 0;
     loop {
+        let frame_start = Instant::now();
+        frame += 1;
+
         // Update physics
         for i in 0..COUNT/4 {
             y_vel[i] += gravity * dt;
@@ -90,6 +94,11 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
         // Send updated instances to renderer
         if sender.send(instances).is_err() {
             break; // Exit if receiver is dropped
+        }
+
+        if frame % 60 == 0 {
+            let elapsed = frame_start.elapsed();
+            println!("{:#?} {:#?}fps", elapsed, 1.0 / elapsed.as_secs_f32());
         }
 
         thread::sleep(std::time::Duration::from_millis(16)); // ~60 FPS
