@@ -1,8 +1,10 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 use wgpu::MemoryHints::Performance;
-use wgpu::{BufferDescriptor, BufferUsages, ShaderSource};
+use wgpu::{BufferDescriptor, BufferUsages, ShaderSource, ShaderStages};
 use winit::window::Window;
+
+use crate::Camera;
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -11,9 +13,9 @@ struct Vertex {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct InstanceData {
-    position: [f32; 2],
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
+pub struct InstanceData {
+    pub position: [f32; 2],
 }
 
 pub struct WgpuCtx<'window> {
@@ -26,6 +28,9 @@ pub struct WgpuCtx<'window> {
     vertex_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
     num_instances: u32,
+    pub camera: Camera,
+    uniform_buffer: wgpu::Buffer,
+    uniform_bind_group: wgpu::BindGroup,
 }
 
 impl<'window> WgpuCtx<'window> {
@@ -65,28 +70,31 @@ impl<'window> WgpuCtx<'window> {
         let surface_config = surface.get_default_config(&adapter, width, height).unwrap();
         surface.configure(&device, &surface_config);
 
+        // Create vertex data for triangle
+        let vertices = [
+            Vertex {
+                position: [-0.05, -0.05],
+            },
+            Vertex {
+                position: [0.05, -0.05],
+            },
+            Vertex {
+                position: [0.0, 0.05],
+            },
+        ];
 
-            // Create vertex data for triangle
-            let vertices = [
-                Vertex { position: [-0.05, -0.05] },
-                Vertex { position: [0.05, -0.05] },
-                Vertex { position: [0.0, 0.05] },
-            ];
-    
-            let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Vertex Buffer"),
-                size: std::mem::size_of_val(&vertices) as u64,
-                usage: BufferUsages::VERTEX,
-                mapped_at_creation: true,
-            });
-    
-            {
-                let mut buffer_view = vertex_buffer.slice(..).get_mapped_range_mut();
-                bytemuck::cast_slice_mut::<_, Vertex>(&mut buffer_view)
-                    .copy_from_slice(&vertices);
-            }
-            vertex_buffer.unmap();
-    
+        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Vertex Buffer"),
+            size: std::mem::size_of_val(&vertices) as u64,
+            usage: BufferUsages::VERTEX,
+            mapped_at_creation: true,
+        });
+
+        {
+            let mut buffer_view = vertex_buffer.slice(..).get_mapped_range_mut();
+            bytemuck::cast_slice_mut::<_, Vertex>(&mut buffer_view).copy_from_slice(&vertices);
+        }
+        vertex_buffer.unmap();
 
         // Create instance data for a 10x10 grid
         let mut instances = Vec::new();
@@ -100,7 +108,7 @@ impl<'window> WgpuCtx<'window> {
                 });
             }
         }
-        
+
         let num_instances = instances.len() as u32;
 
         let instance_data_size = std::mem::size_of::<InstanceData>() as u64;
@@ -113,6 +121,38 @@ impl<'window> WgpuCtx<'window> {
             mapped_at_creation: true,
         });
 
+        let camera = Camera::new();
+
+        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Camera Uniform Buffer"),
+            size: std::mem::size_of::<[[f32; 4]; 4]>() as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Camera Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        
+        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Camera Bind Group"),
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+        });
+
         {
             let mut buffer_view = instance_buffer.slice(..).get_mapped_range_mut();
             bytemuck::cast_slice_mut::<_, InstanceData>(&mut buffer_view)
@@ -120,7 +160,7 @@ impl<'window> WgpuCtx<'window> {
         }
         instance_buffer.unmap();
 
-        let render_pipeline = create_pipeline(&device, surface_config.format);
+        let render_pipeline = create_pipeline(&device, surface_config.format, bind_group_layout);
 
         WgpuCtx {
             surface,
@@ -132,7 +172,16 @@ impl<'window> WgpuCtx<'window> {
             vertex_buffer,
             instance_buffer,
             num_instances,
+            uniform_bind_group,
+            uniform_buffer,
+            camera,
         }
+    }
+
+    pub fn update_instances(&mut self, instances: &[InstanceData]) {
+        self.queue
+            .write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
+        self.num_instances = instances.len() as u32;
     }
 
     pub fn draw(&mut self) {
@@ -146,6 +195,10 @@ impl<'window> WgpuCtx<'window> {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        let view_matrix = self.camera.get_view_matrix();
+        self.queue
+            .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&view_matrix));
 
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -165,6 +218,7 @@ impl<'window> WgpuCtx<'window> {
             rpass.set_pipeline(&self.render_pipeline);
             rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+            rpass.set_bind_group(0, &self.uniform_bind_group, &[]);
             rpass.draw(0..3, 0..self.num_instances);
         }
 
@@ -177,12 +231,14 @@ impl<'window> WgpuCtx<'window> {
         self.surface_config.width = width.max(1);
         self.surface_config.height = height.max(1);
         self.surface.configure(&self.device, &self.surface_config);
+        self.camera.update_window_size(width as f32, height as f32);
     }
 }
 
 fn create_pipeline(
     device: &wgpu::Device,
     swap_chain_format: wgpu::TextureFormat,
+    bind_group_layout: wgpu::BindGroupLayout
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: None,
@@ -191,7 +247,7 @@ fn create_pipeline(
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
-        bind_group_layouts: &[],
+         bind_group_layouts: &[&bind_group_layout], 
         push_constant_ranges: &[],
     });
 
