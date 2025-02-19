@@ -96,7 +96,7 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
             break; // Exit if receiver is dropped
         }
 
-        if frame % 60 == 0 {
+        if frame % FRAMES == 0 {
             let elapsed = frame_start.elapsed();
             println!("{:#?} {:#?}fps", elapsed, 1.0 / elapsed.as_secs_f32());
         }
