@@ -1,27 +1,8 @@
 #![feature(portable_simd)]
-
-// mod bench;
-// use std::thread;
-
-// pub use bench::*;
-
-// fn main() {
-//     const STACK_SIZE: usize = 128 * 1_000_000;
-
-//     // Spawn simulation thread
-//     let sim_thread = thread::Builder::new()
-//         .stack_size(STACK_SIZE)
-//         .spawn(move || simd_bench())
-//         .unwrap();
-
-//     sim_thread.join().unwrap();
-// }
-
-
-use std::simd::num::SimdFloat;
 use std::thread;
 use std::time::Instant;
 
+use std::simd::num::*;
 use std::simd::*;
 use std::simd::cmp::*;
 
@@ -97,7 +78,7 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
         y_vel[i] = f32x4::from_array(y_values);
     }
     
-    let gravity: f32x4 = f32x4::splat(-0.01f32);
+    let gravity: f32x4 = f32x4::splat(-0.0f32);
     let dt = f32x4::splat(0.1f32);
     
     let mut frame: u32 = 0;
@@ -122,7 +103,7 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
             y[i] = y[i].simd_min(bounds_y_max).simd_max(bounds_y_min);
             
             // Reverse velocities at boundaries (with some energy loss)
-            let bounce_factor = f32x4::splat(-0.8); // 20% energy loss on bounce
+            let bounce_factor = f32x4::splat(-1.0); // 20% energy loss on bounce
             x_vel[i] = x_vel[i] * (x_gt_max.select(bounce_factor, f32x4::splat(1.0))) 
                                 * (x_lt_min.select(bounce_factor, f32x4::splat(1.0)));
             y_vel[i] = y_vel[i] * (y_gt_max.select(bounce_factor, f32x4::splat(1.0)))
@@ -173,3 +154,21 @@ fn main()  {
     sim_thread.join().unwrap();
 }
 
+
+
+// mod bench;
+// use std::thread;
+
+// pub use bench::*;
+
+// fn main() {
+//     const STACK_SIZE: usize = 128 * 1_000_000;
+
+//     // Spawn simulation thread
+//     let sim_thread = thread::Builder::new()
+//         .stack_size(STACK_SIZE)
+//         .spawn(move || simd_bench())
+//         .unwrap();
+
+//     sim_thread.join().unwrap();
+// }
