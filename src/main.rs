@@ -22,33 +22,35 @@ pub use camera::*;
 
 fn sim(sender: Sender<Vec<InstanceData>>) {
     const FRAMES: u32 = 60;
-    const COUNT: usize = 1000000; 
+    const COUNT: usize = 1_000_000; 
     const GRID_SIZE: usize = COUNT.isqrt(); 
     const SPACING: f32 = 2.0; // Space between particles
 
     // Define boundaries
     const BOUNDS_X: f32 = 100000.0; // Maximum x distance from center
     const BOUNDS_Y: f32 = 100000.0; // Maximum y distance from center
-    let bounds_x_max = f32x4::splat(BOUNDS_X);
-    let bounds_x_min = f32x4::splat(-BOUNDS_X);
-    let bounds_y_max = f32x4::splat(BOUNDS_Y);
-    let bounds_y_min = f32x4::splat(-BOUNDS_Y);
+    const SIMD_LEVEL: usize = 32;
+    let bounds_x_max = f32x32::splat(BOUNDS_X);
+    let bounds_x_min = f32x32::splat(-BOUNDS_X);
+    let bounds_y_max = f32x32::splat(BOUNDS_Y);
+    let bounds_y_min = f32x32::splat(-BOUNDS_Y);
     
-    let mut x = [f32x4::splat(0.0f32); COUNT / 4 + 1];
-    let mut y = [f32x4::splat(0.0f32); COUNT / 4 + 1];
-    let mut x_vel = [f32x4::splat(0.0f32); COUNT / 4 + 1];
-    let mut y_vel = [f32x4::splat(0.0f32); COUNT / 4 + 1];
+    let mut x = [f32x32::splat(0.0f32); COUNT / SIMD_LEVEL + 1];
+    let mut y = [f32x32::splat(0.0f32); COUNT / SIMD_LEVEL + 1];
+    let mut x_vel = [f32x32::splat(0.0f32); COUNT / SIMD_LEVEL + 1];
+    let mut y_vel = [f32x32::splat(0.0f32); COUNT / SIMD_LEVEL + 1];
     
+    // let mut spatial_lookup = [u32x4::splat(0.0f32); COUNT / 4 + 1];
 
     let mut rng = rand::rng();
     
     // Initialize grid positions
-    for i in 0..COUNT/4 {
-        let mut x_values = [0.0f32; 4];
-        let mut y_values = [0.0f32; 4];
+    for i in 0..COUNT / SIMD_LEVEL {
+        let mut x_values = [0.0f32; SIMD_LEVEL];
+        let mut y_values = [0.0f32; SIMD_LEVEL];
         
-        for j in 0..4 {
-            let index = i * 4 + j;
+        for j in 0..SIMD_LEVEL {
+            let index = i * SIMD_LEVEL + j;
             if index < COUNT {
                 let row = index / GRID_SIZE;
                 let col = index % GRID_SIZE;
@@ -59,27 +61,27 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
             }
         }
         
-        x[i] = f32x4::from_array(x_values);
-        y[i] = f32x4::from_array(y_values);
+        x[i] = f32x32::from_array(x_values);
+        y[i] = f32x32::from_array(y_values);
     }
 
     // Initialize velocities
-    for i in 0..COUNT/4 {
-        let mut x_values = [0.0f32; 4];
-        let mut y_values = [0.0f32; 4];
+    for i in 0..COUNT / SIMD_LEVEL {
+        let mut x_values = [0.0f32; SIMD_LEVEL];
+        let mut y_values = [0.0f32; SIMD_LEVEL];
         
-        for j in 0..4 {
+        for j in 0..SIMD_LEVEL {
             // Center the grid and offset each particle
             x_values[j] = rng.random_range(-0.1..0.1);
             y_values[j] = rng.random_range(-0.1..0.1);
         }
         
-        x_vel[i] = f32x4::from_array(x_values);
-        y_vel[i] = f32x4::from_array(y_values);
+        x_vel[i] = f32x32::from_array(x_values);
+        y_vel[i] = f32x32::from_array(y_values);
     }
     
-    let gravity: f32x4 = f32x4::splat(-0.0f32);
-    let dt = f32x4::splat(0.1f32);
+    let gravity = f32x32::splat(-0.0f32);
+    let dt = f32x32::splat(0.1f32);
     
     let mut frame: u32 = 0;
     loop {
@@ -87,7 +89,7 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
         frame += 1;
 
         // Update physics
-        for i in 0..COUNT/4 {
+        for i in 0..COUNT / SIMD_LEVEL {
             y_vel[i] += gravity * dt;
             x[i] += x_vel[i] * dt;
             y[i] += y_vel[i] * dt;
@@ -103,16 +105,16 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
             y[i] = y[i].simd_min(bounds_y_max).simd_max(bounds_y_min);
             
             // Reverse velocities at boundaries (with some energy loss)
-            let bounce_factor = f32x4::splat(-1.0); // 20% energy loss on bounce
-            x_vel[i] = x_vel[i] * (x_gt_max.select(bounce_factor, f32x4::splat(1.0))) 
-                                * (x_lt_min.select(bounce_factor, f32x4::splat(1.0)));
-            y_vel[i] = y_vel[i] * (y_gt_max.select(bounce_factor, f32x4::splat(1.0)))
-                                * (y_lt_min.select(bounce_factor, f32x4::splat(1.0)));
+            let bounce_factor = f32x32::splat(-1.0); // 20% energy loss on bounce
+            x_vel[i] = x_vel[i] * (x_gt_max.select(bounce_factor, f32x32::splat(1.0))) 
+                                * (x_lt_min.select(bounce_factor, f32x32::splat(1.0)));
+            y_vel[i] = y_vel[i] * (y_gt_max.select(bounce_factor, f32x32::splat(1.0)))
+                                * (y_lt_min.select(bounce_factor, f32x32::splat(1.0)));
         }
 
         // Convert SIMD data to instance data
         let mut instances = Vec::with_capacity(COUNT);
-        instances.extend((0..COUNT/4).flat_map(|i| {
+        instances.extend((0..COUNT / SIMD_LEVEL).flat_map(|i| {
             let x_array = x[i].to_array();
             let y_array = y[i].to_array();
             (0..4).map(move |j| InstanceData {
@@ -130,12 +132,12 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
             println!("{:#?} {:#?}fps", elapsed, 1.0 / elapsed.as_secs_f32());
         }
 
-        thread::sleep(std::time::Duration::from_millis(16) - frame_start.elapsed()); // ~60 FPS
+        thread::sleep(std::time::Duration::from_millis(16).saturating_sub(frame_start.elapsed())); // ~60 FPS
     }
 }
 
 fn main()  {
-    const STACK_SIZE: usize = 128 * 1_000_000;
+    const STACK_SIZE: usize = 2 * 128 * 1_000_000;
     
     // Create channel for instance data
     let (sender, receiver) = channel();
@@ -157,7 +159,6 @@ fn main()  {
 
 
 // mod bench;
-// use std::thread;
 
 // pub use bench::*;
 
