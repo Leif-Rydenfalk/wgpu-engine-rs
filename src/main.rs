@@ -1,7 +1,29 @@
+#![feature(portable_simd)]
+
+// mod bench;
+// use std::thread;
+
+// pub use bench::*;
+
+// fn main() {
+//     const STACK_SIZE: usize = 128 * 1_000_000;
+
+//     // Spawn simulation thread
+//     let sim_thread = thread::Builder::new()
+//         .stack_size(STACK_SIZE)
+//         .spawn(move || simd_bench())
+//         .unwrap();
+
+//     sim_thread.join().unwrap();
+// }
+
+
+use std::simd::num::SimdFloat;
 use std::thread;
 use std::time::Instant;
 
-use wide::{f32x4, f32x8};
+use std::simd::*;
+use std::simd::cmp::*;
 
 use crate::wgpu_ctx::InstanceData;
 use crate::app::App;
@@ -22,11 +44,20 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
     const COUNT: usize = 10000; 
     const GRID_SIZE: usize = 100; // sqrt(COUNT)
     const SPACING: f32 = 0.2; // Space between particles
+
+    // Define boundaries
+    const BOUNDS_X: f32 = 5.0; // Maximum x distance from center
+    const BOUNDS_Y: f32 = 5.0; // Maximum y distance from center
+    let bounds_x_max = f32x4::splat(BOUNDS_X);
+    let bounds_x_min = f32x4::splat(-BOUNDS_X);
+    let bounds_y_max = f32x4::splat(BOUNDS_Y);
+    let bounds_y_min = f32x4::splat(-BOUNDS_Y);
     
-    let mut x = [f32x4::new([0.0f32; 4]); COUNT / 4 + 1];
-    let mut y = [f32x4::new([0.0f32; 4]); COUNT / 4 + 1];
-    let mut x_vel = [f32x4::new([0.0f32; 4]); COUNT / 4 + 1];
-    let mut y_vel = [f32x4::new([0.0f32; 4]); COUNT / 4 + 1];
+    let mut x = [f32x4::splat(0.0f32); COUNT / 4 + 1];
+    let mut y = [f32x4::splat(0.0f32); COUNT / 4 + 1];
+    let mut x_vel = [f32x4::splat(0.0f32); COUNT / 4 + 1];
+    let mut y_vel = [f32x4::splat(0.0f32); COUNT / 4 + 1];
+    
 
     let mut rng = rand::rng();
     
@@ -47,8 +78,8 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
             }
         }
         
-        x[i] = f32x4::new(x_values);
-        y[i] = f32x4::new(y_values);
+        x[i] = f32x4::from_array(x_values);
+        y[i] = f32x4::from_array(y_values);
     }
 
     // Initialize velocities
@@ -62,12 +93,12 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
             y_values[j] = rng.random_range(-0.1..0.1);
         }
         
-        x_vel[i] = f32x4::new(x_values);
-        y_vel[i] = f32x4::new(y_values);
+        x_vel[i] = f32x4::from_array(x_values);
+        y_vel[i] = f32x4::from_array(y_values);
     }
     
-    let gravity: f32x4 = f32x4::new([-0.01f32; 4]);
-    let dt = f32x4::new([0.1f32; 4]);
+    let gravity: f32x4 = f32x4::splat(-0.01f32);
+    let dt = f32x4::splat(0.1f32);
     
     let mut frame: u32 = 0;
     loop {
@@ -79,6 +110,23 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
             y_vel[i] += gravity * dt;
             x[i] += x_vel[i] * dt;
             y[i] += y_vel[i] * dt;
+
+            // Apply boundary constraints with velocity reflection
+            let x_gt_max = x[i].simd_gt(bounds_x_max);
+            let x_lt_min = x[i].simd_lt(bounds_x_min);
+            let y_gt_max = y[i].simd_gt(bounds_y_max);
+            let y_lt_min = y[i].simd_lt(bounds_y_min);
+            
+            // Clamp positions to bounds
+            x[i] = x[i].simd_min(bounds_x_max).simd_max(bounds_x_min);
+            y[i] = y[i].simd_min(bounds_y_max).simd_max(bounds_y_min);
+            
+            // Reverse velocities at boundaries (with some energy loss)
+            let bounce_factor = f32x4::splat(-0.8); // 20% energy loss on bounce
+            x_vel[i] = x_vel[i] * (x_gt_max.select(bounce_factor, f32x4::splat(1.0))) 
+                                * (x_lt_min.select(bounce_factor, f32x4::splat(1.0)));
+            y_vel[i] = y_vel[i] * (y_gt_max.select(bounce_factor, f32x4::splat(1.0)))
+                                * (y_lt_min.select(bounce_factor, f32x4::splat(1.0)));
         }
 
         // Convert SIMD data to instance data
@@ -124,3 +172,4 @@ fn main()  {
     event_loop.run_app(&mut app).unwrap();
     sim_thread.join().unwrap();
 }
+

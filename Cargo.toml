@@ -8,7 +8,6 @@ edition = "2021"
 
 [dependencies]
 # rayon = "1.10.0"
-wide = { version = "0.7.32", features = ["std"] }
 winit = { version = "0.30.8" }
 pollster = { version = "0.4" }
 wgpu = { version = "24.0.1" }
