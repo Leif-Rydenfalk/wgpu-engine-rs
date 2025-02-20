@@ -22,13 +22,13 @@ pub use camera::*;
 
 fn sim(sender: Sender<Vec<InstanceData>>) {
     const FRAMES: u32 = 60;
-    const COUNT: usize = 10000; 
-    const GRID_SIZE: usize = 100; // sqrt(COUNT)
-    const SPACING: f32 = 0.2; // Space between particles
+    const COUNT: usize = 1000000; 
+    const GRID_SIZE: usize = COUNT.isqrt(); 
+    const SPACING: f32 = 2.0; // Space between particles
 
     // Define boundaries
-    const BOUNDS_X: f32 = 5.0; // Maximum x distance from center
-    const BOUNDS_Y: f32 = 5.0; // Maximum y distance from center
+    const BOUNDS_X: f32 = 100000.0; // Maximum x distance from center
+    const BOUNDS_Y: f32 = 100000.0; // Maximum y distance from center
     let bounds_x_max = f32x4::splat(BOUNDS_X);
     let bounds_x_min = f32x4::splat(-BOUNDS_X);
     let bounds_y_max = f32x4::splat(BOUNDS_Y);
@@ -130,7 +130,7 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
             println!("{:#?} {:#?}fps", elapsed, 1.0 / elapsed.as_secs_f32());
         }
 
-        thread::sleep(std::time::Duration::from_millis(16)); // ~60 FPS
+        thread::sleep(std::time::Duration::from_millis(16) - frame_start.elapsed()); // ~60 FPS
     }
 }
 

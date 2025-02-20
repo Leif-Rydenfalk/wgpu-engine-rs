@@ -71,16 +71,11 @@ impl<'window> WgpuCtx<'window> {
         surface.configure(&device, &surface_config);
 
         // Create vertex data for triangle
+        let radius = 2.0;
         let vertices = [
-            Vertex {
-                position: [-0.05, -0.05],
-            },
-            Vertex {
-                position: [0.05, -0.05],
-            },
-            Vertex {
-                position: [0.0, 0.05],
-            },
+            Vertex { position: [radius * f32::cos(0.0), radius * f32::sin(0.0)] }, 
+            Vertex { position: [radius * f32::cos(2.0 * std::f32::consts::PI / 3.0), radius * f32::sin(2.0 * std::f32::consts::PI / 3.0)] },
+            Vertex { position: [radius * f32::cos(4.0 * std::f32::consts::PI / 3.0), radius * f32::sin(4.0 * std::f32::consts::PI / 3.0)] }
         ];
 
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {

@@ -12,7 +12,7 @@ impl Camera {
     pub fn new() -> Self {
         Self {
             position: [0.0, 0.0],
-            zoom: 1.0,
+            zoom: 1.0 / 1000.0,
             dragging: false,
             last_mouse_pos: None,
             window_size: [800.0, 600.0],
@@ -82,9 +82,9 @@ impl Camera {
     }
 
     pub fn handle_scroll(&mut self, delta: f32, cursor_pos: [f32; 2]) {
-        const MIN_ZOOM: f32 = 0.1;
-        const MAX_ZOOM: f32 = 10.0;
-        const ZOOM_SPEED: f32 = 0.1;
+        const MIN_ZOOM: f32 = 0.001;
+        const MAX_ZOOM: f32 = 10000.0;
+        const ZOOM_SPEED: f32 = 0.5;
 
         // Get world position of cursor before zoom
         let world_pos_before = self.screen_to_world(cursor_pos);
