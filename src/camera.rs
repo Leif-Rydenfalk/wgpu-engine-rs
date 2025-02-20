@@ -83,7 +83,7 @@ impl Camera {
 
     pub fn handle_scroll(&mut self, delta: f32, cursor_pos: [f32; 2]) {
         const MIN_ZOOM: f32 = 0.001;
-        const MAX_ZOOM: f32 = 100000.0;
+        const MAX_ZOOM: f32 = 1000000.0;
         const ZOOM_SPEED: f32 = 0.5;
 
         // Get world position of cursor before zoom

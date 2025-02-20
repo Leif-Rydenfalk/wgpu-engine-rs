@@ -22,13 +22,13 @@ pub use camera::*;
 
 fn sim(sender: Sender<Vec<InstanceData>>) {
     const FRAMES: u32 = 60;
-    const COUNT: usize = 1_000_000; 
+    const COUNT: usize = 100_000; 
     const GRID_SIZE: usize = COUNT.isqrt(); 
     const SPACING: f32 = 2.0; // Space between particles
 
     // Define boundaries
-    const BOUNDS_X: f32 = 100000.0; // Maximum x distance from center
-    const BOUNDS_Y: f32 = 100000.0; // Maximum y distance from center
+    const BOUNDS_X: f32 = 1_000.0; // Maximum x distance from center
+    const BOUNDS_Y: f32 = 1_000.0; // Maximum y distance from center
     const SIMD_LEVEL: usize = 32;
     let bounds_x_max = f32x32::splat(BOUNDS_X);
     let bounds_x_min = f32x32::splat(-BOUNDS_X);
@@ -72,8 +72,8 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
         
         for j in 0..SIMD_LEVEL {
             // Center the grid and offset each particle
-            x_values[j] = rng.random_range(-0.1..0.1);
-            y_values[j] = rng.random_range(-0.1..0.1);
+            x_values[j] = rng.random_range(-1.0..1.0) * 10.0;
+            y_values[j] = rng.random_range(-1.0..1.0) * 10.0;
         }
         
         x_vel[i] = f32x32::from_array(x_values);
@@ -82,7 +82,7 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
     
     let gravity = f32x32::splat(-0.0f32);
     let dt = f32x32::splat(0.1f32);
-    
+   
     let mut frame: u32 = 0;
     loop {
         let frame_start = Instant::now();
@@ -97,7 +97,7 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
             // Apply boundary constraints with velocity reflection
             let x_gt_max = x[i].simd_gt(bounds_x_max);
             let x_lt_min = x[i].simd_lt(bounds_x_min);
-            let y_gt_max = y[i].simd_gt(bounds_y_max);
+            let y_gt_max = y[i].simd_gt(bounds_y_max);  
             let y_lt_min = y[i].simd_lt(bounds_y_min);
             
             // Clamp positions to bounds
@@ -105,11 +105,11 @@ fn sim(sender: Sender<Vec<InstanceData>>) {
             y[i] = y[i].simd_min(bounds_y_max).simd_max(bounds_y_min);
             
             // Reverse velocities at boundaries (with some energy loss)
-            let bounce_factor = f32x32::splat(-1.0); // 20% energy loss on bounce
+            let bounce_factor = f32x32::splat(-0.8); // 20% energy loss on bounce
             x_vel[i] = x_vel[i] * (x_gt_max.select(bounce_factor, f32x32::splat(1.0))) 
                                 * (x_lt_min.select(bounce_factor, f32x32::splat(1.0)));
             y_vel[i] = y_vel[i] * (y_gt_max.select(bounce_factor, f32x32::splat(1.0)))
-                                * (y_lt_min.select(bounce_factor, f32x32::splat(1.0)));
+                                * (y_lt_min.select(bounce_factor, f32x32::splat(1.0)));      
         }
 
         // Convert SIMD data to instance data
