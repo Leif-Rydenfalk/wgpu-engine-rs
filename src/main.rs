@@ -8,10 +8,9 @@ use std::simd::cmp::*;
 
 use crate::wgpu_ctx::InstanceData;
 use crate::app::App;
-use winit::error::EventLoopError;
 use winit::event_loop::{ControlFlow, EventLoop};
 
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, Sender};
 
 use rand::Rng;
 

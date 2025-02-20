@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 use wgpu::MemoryHints::Performance;
-use wgpu::{BufferDescriptor, BufferUsages, ShaderSource, ShaderStages};
+use wgpu::{BufferDescriptor, BufferUsages, ShaderSource};
 use winit::window::Window;
 
 use crate::Camera;
