@@ -7,7 +7,7 @@ use winit::window::{Window, WindowId};
 
 use crate::wgpu_ctx::InstanceData;
 
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{channel, Receiver};
 
 use crate::wgpu_ctx::WgpuCtx;
 
