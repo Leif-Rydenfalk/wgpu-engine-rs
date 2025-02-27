@@ -14,6 +14,8 @@ use std::sync::mpsc::{channel, Sender};
 
 use rand::Rng;
 
+mod input;
+pub use input::*;
 mod app;
 mod wgpu_ctx;
 mod camera;

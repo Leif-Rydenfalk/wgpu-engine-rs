@@ -6,10 +6,6 @@ use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowId};
 
-use imgui::*;
-use imgui_wgpu::{Renderer, RendererConfig, Texture, TextureConfig};
-use imgui_winit_support::WinitPlatform;
-
 use crate::wgpu_ctx::InstanceData;
 use crate::wgpu_ctx::WgpuCtx;
 
@@ -27,6 +23,7 @@ pub struct App<'window> {
     pub instance_receiver: Receiver<Vec<InstanceData>>,
     pub mouse_position: Option<[f32; 2]>,
     pub imgui: Option<ImguiState>,
+    pub input: input_actions::System,
 }
 
 impl<'window> App<'window> {
@@ -141,21 +138,20 @@ impl<'window> App<'window> {
 
             // --- Scene Render Pass ---
             {
-                let mut scene_pass =
-                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Scene Render Pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
+                let mut scene_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Scene Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
 
                 // Render your scene
                 scene_pass.set_pipeline(&wgpu_ctx.render_pipeline);
@@ -168,21 +164,20 @@ impl<'window> App<'window> {
             // --- ImGui Render Pass ---
             {
                 // Use Load so that the scene remains intact
-                let mut imgui_pass =
-                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("ImGui Render Pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
+                let mut imgui_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("ImGui Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
 
                 // Render ImGui draw data on top of the scene
                 let draw_data = imgui_state.context.render();
@@ -201,7 +196,6 @@ impl<'window> App<'window> {
             wgpu_ctx.queue.submit(Some(encoder.finish()));
             output.present();
         }
-   
     }
 }
 
@@ -213,6 +207,7 @@ impl App<'_> {
             mouse_position: None,
             wgpu_ctx: None,
             imgui: None,
+            input: input_actions::System::new(),
         }
     }
 }
@@ -247,6 +242,10 @@ impl<'window> ApplicationHandler for App<'window> {
         window_id: WindowId,
         event: WindowEvent,
     ) {
+        if let Ok(input_event) = input_actions::winit::parse_winit_event(&event) {
+            self.input.send_event(input_event.0, input_event.1);
+        }
+
         // First let ImGui process the event
         if let Some(imgui_state) = &mut self.imgui {
             imgui_state.platform.handle_event::<WindowEvent>(
@@ -258,13 +257,12 @@ impl<'window> ApplicationHandler for App<'window> {
                 },
             );
         }
-    
+
         // Check if ImGui wants to capture mouse input
-        let imgui_captures_mouse = self
-            .imgui
-            .as_ref()
-            .map_or(false, |imgui_state| imgui_state.context.io().want_capture_mouse);
-    
+        let imgui_captures_mouse = self.imgui.as_ref().map_or(false, |imgui_state| {
+            imgui_state.context.io().want_capture_mouse
+        });
+
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -325,5 +323,4 @@ impl<'window> ApplicationHandler for App<'window> {
             _ => (),
         }
     }
-    
 }
