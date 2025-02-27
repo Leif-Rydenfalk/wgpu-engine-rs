@@ -10,6 +10,7 @@ target/
 *.pdb
 
 Cargo.lock
+.DS_Store
 
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
