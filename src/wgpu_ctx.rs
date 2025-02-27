@@ -19,18 +19,18 @@ pub struct InstanceData {
 }
 
 pub struct WgpuCtx<'window> {
-    surface: wgpu::Surface<'window>,
-    surface_config: wgpu::SurfaceConfiguration,
-    adapter: wgpu::Adapter,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    instance_buffer: wgpu::Buffer,
-    num_instances: u32,
+    pub surface: wgpu::Surface<'window>,
+    pub surface_config: wgpu::SurfaceConfiguration,
+    pub adapter: wgpu::Adapter,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub render_pipeline: wgpu::RenderPipeline,
+    pub vertex_buffer: wgpu::Buffer,
+    pub instance_buffer: wgpu::Buffer,
+    pub num_instances: u32,
     pub camera: Camera,
-    uniform_buffer: wgpu::Buffer,
-    uniform_bind_group: wgpu::BindGroup,
+    pub uniform_buffer: wgpu::Buffer,
+    pub uniform_bind_group: wgpu::BindGroup,
 }
 
 impl<'window> WgpuCtx<'window> {
